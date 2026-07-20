@@ -639,18 +639,41 @@ async function restoreFromBackup(data) {
   } catch {}
 }
 
-// ---------- Claude API (uses the built-in in-page helper — no key, no CORS) ----------
+// ---------- Claude API (via the Cloudflare Pages Function — the API key lives on the server) ----------
+// The browser never sees the Anthropic key: it POSTs to /api/generate on the same domain,
+// and the serverless function calls Anthropic and returns just the generated text.
 async function callClaude(messages, tools, maxTokens) {
-  if (!(window.claude && typeof window.claude.complete === "function")) {
-    throw new Error("The AI writing service isn't available in this environment.");
+  let resp;
+  try {
+    resp = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messages,
+        tools: Array.isArray(tools) ? tools : [],
+        maxTokens: maxTokens || 1000,
+      }),
+    });
+  } catch (e) {
+    // Network / DNS / offline — never a code problem the user can act on.
+    throw new Error("Couldn't reach the writing service. Check your connection and try again.");
   }
-  const req = { messages, max_tokens: maxTokens || 1000, model: "claude-sonnet-4-5" };
-  // Only client-side tools are supported in-page; server tools (web search) are skipped.
-  if (tools && tools.length && !tools.some((t) => /web_search|_2025/.test(t.type || ""))) {
-    req.tools = tools;
+
+  // Read once as text so a non-JSON error page can't throw.
+  let data = {};
+  try {
+    const raw = await resp.text();
+    data = raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    data = {};
   }
-  const text = await window.claude.complete(req);
-  if (!text) throw new Error("No response from the AI service.");
+
+  if (!resp.ok) {
+    throw new Error((data && data.error) || ("The writing service returned an error (" + resp.status + "). Please try again."));
+  }
+
+  const text = data && data.text;
+  if (!text) throw new Error("No response from the writing service. Please try again.");
   return String(text);
 }
 
