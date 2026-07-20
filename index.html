@@ -1,0 +1,2126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Enterpryze Campaign Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>html,body,#root{height:100%;margin:0}</style>
+<script>
+(function () {
+  const K = (key, shared) => (shared ? "shared::" : "me::") + key;
+  window.storage = {
+    async get(key, shared) {
+      const v = localStorage.getItem(K(key, shared));
+      return v === null ? null : { value: v };
+    },
+    async set(key, value, shared) { localStorage.setItem(K(key, shared), value); },
+    async delete(key, shared) { localStorage.removeItem(K(key, shared)); },
+  };
+  window.claude = window.claude || {};
+})();
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script>
+window.addEventListener("error", function (e) {
+  var r = document.getElementById("root");
+  if (r && !r.hasChildNodes()) {
+    r.innerHTML = "<pre style='padding:20px;white-space:pre-wrap;font:13px monospace;color:#B3261E'>" +
+      ((e.error && (e.error.stack || e.error.message)) || e.message || "Unknown error") + "</pre>";
+  }
+});
+</script>
+<script type="text/plain" id="appsrc">
+const XLSX = window.XLSX;
+const { useState, useEffect, useRef } = React;
+
+
+// ---------- Brand tokens ----------
+const BRAND = {
+  primary: "#662D91",
+  secondary: "#B41E8E",
+  accent: "#EC008C",
+  ink: "#2B2140",
+  inkSoft: "#6B6180",
+  paper: "#FAF8FC",
+  card: "#FFFFFF",
+  line: "#E9E2F2",
+  tintLight: "#F3EDF9",
+};
+
+const font = "'Open Sans', 'Segoe UI', system-ui, sans-serif";
+
+// ---------- Dropdown values (from backend seed spec) ----------
+const REGIONS = [
+  "Ireland",
+  "UK",
+  "British Columbia",
+  "California",
+  "New York",
+  "Illinois",
+  "Florida",
+];
+
+const VERTICALS = [
+  "Food and Drink",
+  "Medical Distribution",
+  "Medical Manufacturing",
+  "Electrical & Electronic Manufacturers",
+  "Wholesale & Distribution",
+  "Building Materials",
+  "Retail",
+  "Information Technology / Technology Firms",
+  "Veterinary / Animal Health",
+  "Exchequer Users",
+  "Navision / Microsoft Dynamics NAV Users",
+  "Great Plains / Microsoft Dynamics GP Users",
+  "SAP Business One Partner English",
+  "SAP Business One Partner Spanish",
+  "SAP Business One Add-on Partner English",
+  "SAP Business One Add-on Partner Spanish",
+  "Accounting Firms",
+  "Enterprise Ireland Member Companies",
+  "Chamber / Business Support Organisations",
+  "Dormant Leads",
+  "Old / Lost Leads",
+  "Ex-Customers / Win-back",
+  "Milner Browne SAP",
+  "Milner Browne Enterpryze",
+  "Other SAP Business One Companies",
+];
+
+// ---------- Seed templates: prefill "who they are" and "known pain points" per vertical ----------
+const SEED = {
+  "Food and Drink": {
+    who: "SME food and drink manufacturers, processors, producers, packers and distributors. They may make or distribute finished food products, drinks, ingredients, sauces, frozen goods, bakery items, fresh produce, packaged foods or specialist food products. The audience is likely owners, operations leads, finance teams, production managers or commercial leads who need to manage ingredients, batches, recipes, purchasing, stock, expiry dates, customer orders and margin across a growing business.",
+    pain: "Ingredient costs change regularly, supplier lead times can move, and stock can expire or become short-dated before the team has full visibility. Batches, expiry dates, recipes, purchasing, production, customer orders and margin may be tracked across spreadsheets, stock notes or disconnected systems. This can lead to waste, stock write-offs, late purchasing, poor batch visibility, difficulty knowing what is available to sell or produce, and margin only becoming clear after an order has already gone out. Emails should focus on stock accuracy, batch and expiry visibility, ingredient cost pressure, production planning, avoiding waste and knowing the true margin before products ship.",
+  },
+  "Medical Distribution": {
+    who: "SME medical product distributors, medical device distributors, healthcare product suppliers and medical stock businesses. They may manage sterile products, consumables, equipment, devices, reagents or regulated healthcare stock. The audience is likely owners, operations leads, finance teams, warehouse managers, quality/compliance leads or commercial teams who need to manage stock, purchasing, customer orders, batch/lot details, expiry dates, traceability and margin.",
+    pain: "Medical products often require accurate batch, lot, serial or expiry tracking. Teams may need to answer recall, audit or customer traceability questions quickly, but the information can sit across spreadsheets, packing notes, stock systems and purchasing records. Stock can look available but already be committed, short-dated stock can expire before it is moved, and margin can slip because purchasing, stock and sales are not fully connected. Emails should focus on traceability, expiry visibility, recall readiness, committed stock, first-expiry-first-out, stock accuracy, reducing manual checks and knowing which item or batch went to which customer.",
+  },
+  "Medical Manufacturing": {
+    who: "SME medical device manufacturers, healthcare product manufacturers and regulated production businesses making or assembling medical products, components, devices, consumables or specialist healthcare equipment. The audience is likely owners, production leads, operations managers, quality/compliance leads, finance teams or commercial teams who need to manage purchasing, stock, production, batch/lot details, serial numbers, expiry dates, traceability, customer orders and margin.",
+    pain: "Medical manufacturers need control over materials, components, batches, serials, expiry dates, production records and customer traceability. Teams may rely on spreadsheets, stock notes, job records or separate systems to manage purchasing, production and finished goods. This can make it difficult to see what is available, what is committed, what batch went into which product and what margin was made. Emails should focus on production visibility, traceability, audit readiness, stock accuracy, expiry control, committed stock and reducing manual checks.",
+  },
+  "Electrical & Electronic Manufacturers": {
+    who: "SME electrical and electronic manufacturers, component suppliers, equipment makers and assembly businesses. They may produce or distribute parts, cables, panels, controls, devices, switchgear, sensors, lighting products, electronic assemblies, electrical equipment or finished electrical products. The audience is likely operations, finance, owners, production leads or commercial teams who need to manage stock, purchasing, supplier costs, serial numbers, jobs, sales orders and margin across small or growing teams.",
+    pain: "Component costs and supplier lead times change regularly. Stock can look available on paper but already be committed to a job, build, repair, sales order or customer order. Teams may rely on spreadsheets, stock notes or disconnected systems to manage parts, purchasing, serial numbers, jobs and margin. This can cause last-minute buying, delivery delays, duplicate purchasing, incorrect stock promises and margin pressure before the order is shipped or invoiced. Avoid using one specific component type, tariff story or country-specific news unless it applies to the whole audience. Emails should focus on committed stock, component cost changes, serial/asset visibility, purchasing delays and knowing the true margin before the order leaves.",
+  },
+  "Wholesale & Distribution": {
+    who: "SME wholesale and distribution businesses that buy from suppliers and sell to trade, retail, commercial or specialist customers. They may handle large product ranges, supplier price lists, customer-specific pricing, repeat orders, backorders, stock movements, warehouse operations and deliveries. The audience is likely owners, finance teams, operations managers, warehouse leads or sales/commercial teams who need to keep stock, purchasing, customer orders, pricing and margin connected.",
+    pain: "Wholesale businesses can lose margin when supplier costs change, stock availability is unclear, customer-specific pricing is not controlled, or delivery and purchasing costs are not visible in time. Stock may look available but be allocated elsewhere, backorders can build up, and teams may be checking sales orders, purchase orders and stock in separate systems or spreadsheets. Emails should focus on stock availability, backorders, supplier price changes, customer pricing, order fulfilment, warehouse visibility, delivery costs and knowing what each order is really worth before it goes out.",
+  },
+  "Building Materials": {
+    who: "SME building material merchants, construction suppliers, trade counters, wholesalers and distributors. They may sell timber, concrete products, plumbing supplies, electrical supplies, tiles, flooring, insulation, tools, hardware, aggregates, roofing products or general construction materials. The audience is likely owners, branch managers, operations leads, finance teams or sales teams who manage quotes, supplier pricing, branch stock, purchase orders, deliveries and trade customer orders.",
+    pain: "Quotes can look profitable when they are raised but change by the time stock is picked, delivered and invoiced. Supplier prices, haulage costs, branch stock, backorders and customer-specific pricing can all affect margin. Stock may be spread across branches, yards or warehouses, and teams may rely on manual checks before promising availability. Emails should focus on quote-to-delivery margin, stock availability, branch stock, backorders, supplier price changes, haulage/delivery costs, trade customer pricing and seeing the real margin before the order leaves.",
+  },
+  Retail: {
+    who: "SME retail businesses selling products through stores, online channels or a mix of both. They may manage fast-moving products, seasonal items, slow-moving stock, supplier orders, customer demand, promotions, discounts and replenishment. The audience is likely owners, finance teams, operations managers, retail managers or ecommerce/stock teams who need better visibility of stock, purchasing, sales and margin.",
+    pain: "Retail stock can look fine until a best-seller runs out, slow-moving products take up cash and space, or discounts and supplier cost changes quietly reduce margin. Teams may struggle to know what is selling, what needs reordering, what is overstocked and what each sale is really worth. Emails should focus on stock accuracy, reordering, best-sellers running low, slow-moving stock, discounting, supplier cost changes, margin visibility and reducing manual stock checks across sales channels.",
+  },
+  "Information Technology / Technology Firms": {
+    who: "SME technology firms, IT service providers, managed service providers, software and hardware resellers, telecoms providers, AV/security installers and technology project businesses. They may sell or manage hardware, licences, subscriptions, devices, equipment, installations, support contracts or project-based work. The audience is likely owners, operations leads, finance teams, project managers or commercial teams who need to manage stock, purchasing, serial numbers, customer orders, jobs, licences, installs and margin across a growing team.",
+    pain: "Technology firms often have kit and licences coming in, projects and installs going out, and margin sitting in the middle. Stock, purchase orders, supplier costs, serial numbers, asset tracking, licences and job costs may sit in separate places, making it hard to know what a deal really made until it is closed and invoiced. Teams may rely on spreadsheets, manual checks or disconnected systems to track hardware, software licences, customer assets, project costs and renewals. Emails should focus on stock visibility, serial/asset tracking, purchasing, job cost visibility, licence/order management, and knowing the true margin before the project or order is complete.",
+  },
+  "Veterinary / Animal Health": {
+    who: "SME veterinary suppliers, animal health product companies, veterinary medicine distributors, animal nutrition suppliers and related product businesses. They may manage veterinary medicines, supplements, consumables, animal health products, specialist stock, batches, expiry dates, customer orders and purchasing. The audience is likely owners, operations leads, warehouse teams, finance teams or commercial managers who need to manage stock accuracy, batch/lot visibility, expiry dates, reordering and margin.",
+    pain: "Veterinary and animal health products can require careful batch, lot and expiry tracking. Stock may look available but already be committed, short-dated products can sit unnoticed, and teams may need to know which batch went to which customer during a recall, customer query or stock investigation. Information may sit across spreadsheets, packing notes, stock records and purchasing documents. Emails should focus on veterinary stock, animal health products, batch/lot control, expiry visibility, recall readiness, reordering and reducing manual checks.",
+  },
+  "Exchequer Users": {
+    who: "SME businesses still using Exchequer for finance, stock, purchasing, sales, operations or reporting. They may be established Irish or UK companies that have relied on Exchequer for years, but are now starting to feel the limits of older workflows, manual reporting or disconnected processes. The audience is likely finance leads, owners, operations managers or commercial decision-makers who need continuity, not disruption.",
+    pain: "Exchequer users may be thinking about what comes next, but they are likely cautious about change because the system supports important day-to-day processes. Finance, stock, purchasing, sales and reporting may still depend on spreadsheets, manual workarounds or slower reporting. Emails should focus on moving from Exchequer to a modern cloud ERP, keeping familiar business processes connected, improving real-time visibility, reducing manual work and making the transition feel practical rather than risky.",
+  },
+  "Navision / Microsoft Dynamics NAV Users": {
+    who: "Businesses still using Navision or Microsoft Dynamics NAV to manage finance, stock, purchasing, sales, warehouse operations, production or reporting. These companies may have used NAV for many years and may have customised processes, reports, spreadsheets or add-ons built around it. The audience is likely finance leaders, operations leads, owners, IT decision-makers or commercial teams considering whether their current system still fits the way the business operates today.",
+    pain: "Navision users may have strong existing processes but struggle with older reporting, custom workarounds, upgrade uncertainty, limited cloud access or difficulty getting a single real-time view of finance, stock, purchasing and sales. They may not want a huge ERP replacement project, but they do want better visibility, easier access and fewer manual checks. Emails should focus on modernising without disruption, keeping core processes connected, reducing spreadsheet dependence, improving stock and reporting visibility, and giving teams a practical cloud ERP route forward.",
+  },
+  "Great Plains / Microsoft Dynamics GP Users": {
+    who: "Businesses still using Microsoft Dynamics GP, also known as Great Plains, for finance, reporting, stock, purchasing, sales or operations. They may have used GP for a long time and may rely on spreadsheets, add-ons, older reports or manual checks around the system. The audience is likely finance leaders, owners, operations leads or decision-makers who are looking at modern ERP options but want to protect the processes their team already depends on.",
+    pain: "Great Plains users may face older finance/reporting processes, spreadsheet reliance, disconnected stock visibility, add-on dependency, manual checks or difficulty getting real-time information across the business. The concern is usually not just replacing software, but keeping finance, reporting, stock and day-to-day operations working without disruption. Emails should focus on modern cloud ERP, easier access, real-time visibility, reducing spreadsheets and workarounds, and supporting the finance, stock, purchasing, sales and reporting processes the team already depends on.",
+  },
+  "SAP Business One Partner English": {
+    who: "English-speaking SAP Business One partners, consultants, resellers, implementation partners and add-on partners who work with SME ERP customers. They may support SAP Business One customers, sell complementary solutions, manage implementations or look for additional cloud ERP and add-on opportunities.",
+    pain: "Partners may need new revenue opportunities, complementary solutions, cloud ERP options, add-ons, integrations or ways to support customers whose needs are changing. They may also need practical tools for expenses, stock, reporting, field teams, mobile workflows or lighter ERP requirements. Emails should focus on partner opportunity, making SAP do more for customers, opening up new solution areas, supporting customer needs and creating a clear reason to speak with Enterpryze or Milner Browne.",
+  },
+  "SAP Business One Partner Spanish": {
+    who: "Spanish-speaking SAP Business One partners, consultants, resellers, implementation partners and add-on partners who work with SME ERP customers in Spanish-speaking markets. They may support SAP Business One customers, sell complementary solutions, manage implementations or look for additional cloud ERP and add-on opportunities.",
+    pain: "Partners may need new revenue opportunities, complementary solutions, cloud ERP options, add-ons, integrations or ways to support customers whose needs are changing. Emails should focus on partner opportunity, supporting SAP Business One customers, complementary solutions, add-ons and a clear reason to speak with Enterpryze or Milner Browne. Emails should be generated in Spanish where the campaign is Spanish-language.",
+  },
+  "SAP Business One Add-on Partner English": {
+    who: "English-speaking SAP Business One add-on partners, ISVs, solution providers and integration partners who build or sell complementary products around SAP Business One.",
+    pain: "Add-on partners may want access to new customers, partner opportunities, complementary ERP workflows, integrations or ways to support customers with practical cloud processes. Emails should focus on collaboration, complementary value, customer need and partnership opportunity.",
+  },
+  "SAP Business One Add-on Partner Spanish": {
+    who: "Spanish-speaking SAP Business One add-on partners, ISVs, solution providers and integration partners who build or sell complementary products around SAP Business One.",
+    pain: "Add-on partners may want access to new customers, partner opportunities, complementary ERP workflows, integrations or ways to support customers with practical cloud processes. Emails should focus on collaboration, complementary value, customer need and partnership opportunity. Emails should be generated in Spanish where the campaign is Spanish-language.",
+  },
+  "Enterprise Ireland Member Companies": {
+    who: "Irish businesses that are Enterprise Ireland members or associated with Enterprise Ireland programmes. They may be scaling SMEs, exporters, manufacturers, distributors, technology businesses or service companies with growth ambitions.",
+    pain: "These companies may be growing quickly and need better systems to support stock, finance, purchasing, sales, reporting, exports, operations or customer orders. They may be moving beyond spreadsheets or older accounting systems. Emails should focus on growth, export readiness, operational visibility, stock/reporting control and practical ERP for scaling Irish SMEs.",
+  },
+  "Chamber / Business Support Organisations": {
+    who: "Companies or contacts sourced from business support organisations, chambers of commerce, local enterprise offices, economic development bodies or advisory networks. They may include SMEs across many industries.",
+    pain: "These businesses may be growing, looking for better systems, struggling with spreadsheets, old software, stock visibility, reporting gaps or disconnected finance and operations. Emails should be broad but practical, focused on helping growing SMEs get better visibility and control without making ERP feel too large or risky.",
+  },
+};
+
+// The four main industry audiences get pre-created for every region.
+const DEFAULT_AUDIENCE_VERTICALS = [
+  "Food and Drink",
+  "Medical Distribution",
+  "Electrical & Electronic Manufacturers",
+  "Wholesale & Distribution",
+];
+
+// ---------- Pre-loaded workspace: every audience the team already runs, with owners ----------
+// Owner is assigned by region so the whole grid is populated without hand-entry.
+const FULL_REGIONS = ["Ireland", "UK", "British Columbia", "California", "New York", "Florida", "Illinois"];
+const AUDIENCE_OWNERS = {
+  Ireland: "Chris Side",
+  UK: "Chris Side",
+  "British Columbia": "Sofia",
+  Florida: "Sofia",
+  California: "Frank",
+  "New York": "Frank",
+  Illinois: "Frank",
+};
+// [vertical, regions it runs in]
+const SEED_PLAN = [
+  ["Food and Drink", FULL_REGIONS],
+  ["Medical Distribution", FULL_REGIONS],
+  ["Electrical & Electronic Manufacturers", FULL_REGIONS],
+  ["Wholesale & Distribution", FULL_REGIONS],
+  ["Building Materials", FULL_REGIONS],
+  ["Retail", FULL_REGIONS],
+  ["Information Technology / Technology Firms", FULL_REGIONS],
+  ["Veterinary / Animal Health", FULL_REGIONS],
+  ["Exchequer Users", ["UK"]],
+  ["Navision / Microsoft Dynamics NAV Users", FULL_REGIONS],
+  ["Great Plains / Microsoft Dynamics GP Users", FULL_REGIONS],
+];
+
+function slug(s) {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+// ---------- Scheduling / cadence ----------
+const CADENCES = [
+  { label: "Weekly", days: 7 },
+  { label: "Fortnightly", days: 14 },
+  { label: "Every 3 weeks", days: 21 },
+  { label: "Every 4 weeks", days: 28 },
+];
+const DAY = 24 * 60 * 60 * 1000;
+
+function parseDate(s) {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+function startOfToday() {
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+}
+function fmtDate(ts) {
+  return new Date(ts).toLocaleDateString("en-IE", { weekday: "short", day: "numeric", month: "short" });
+}
+function cadenceLabel(days) {
+  const c = CADENCES.find((c) => c.days === days);
+  return c ? c.label : "Every " + days + " days";
+}
+// ---------- THE single shared scheduling function ----------
+// Cadence is always an exact number of calendar days (Fortnightly = 14, never 28).
+// The schedule is purely count-based, so a missed send is never silently skipped:
+//   Email N is due on       firstSendDate + (N - 1) * cadenceDays
+//   The NEXT send is due on firstSendDate + (emails already sent) * cadenceDays
+// A completed (sent) email advances the schedule by exactly ONE cadence interval.
+// A generated-but-unsent draft fills the upcoming slot ("content ready") but does NOT
+// advance the date. If the next date is in the past it is reported as `overdue` rather
+// than rolled forward to a future cycle — the team still sees the date that needs action.
+// `emails` may be the audience's email array, or a plain number = count of sent emails
+// (used by the summary card, which doesn't load full email records).
+// Returns { nextDue, daysUntil, overdue, ready, sentCount } or null (no schedule set).
+function computeSchedule(audience, emails) {
+  if (!audience.startDate || !audience.cadenceDays) return null;
+  const start = parseDate(audience.startDate);
+  const cad = audience.cadenceDays * DAY;
+  const today = startOfToday();
+  let sentCount, hasDraft;
+  if (typeof emails === "number") {
+    sentCount = emails;
+    hasDraft = false;
+  } else {
+    const list = Array.isArray(emails) ? emails : [];
+    sentCount = list.filter((e) => e.sentAt).length;
+    hasDraft = list.some((e) => !e.sentAt);
+  }
+  const nextDue = start + sentCount * cad;
+  const daysUntil = Math.round((nextDue - today) / DAY);
+  return { nextDue, daysUntil, overdue: daysUntil < 0, ready: hasDraft, sentCount };
+}
+
+// ---------- Fixed email blocks (per spec: always appended automatically) ----------
+const BLOCKS_EN = {
+  cta: "Worth a quick look at how it'd fit *|COMPANY|*? Just reply to this email and I'll be in touch to arrange a quick chat at a time that suits you. You can also visit our website for more details - https://www.enterpryze.com/",
+  signature: "Regards,\n\nEmma\n\nT: +353 (0) 1 9053616\nE: emma@enterpryze.com",
+  ps: "PS: If you're interested in understanding how well you manage your stock, take this short poll: Stock Leak Finder | Enterpryze ERP",
+};
+const BLOCKS_ES = {
+  cta: "¿Le interesa ver cómo encajaría en *|COMPANY|*? Simplemente responda a este correo y me pondré en contacto para organizar una breve llamada cuando le convenga. También puede visitar nuestra web para más información - https://www.enterpryze.com/",
+  signature: "Saludos,\n\nEmma\n\nT: +353 (0) 1 9053616\nE: emma@enterpryze.com",
+  ps: "PD: Si le interesa saber qué tan bien gestiona su stock, participe en esta breve encuesta: Stock Leak Finder | Enterpryze ERP",
+};
+
+function isSpanish(audience) {
+  return /spanish/i.test(audience.vertical);
+}
+function isPartnerAudience(audience) {
+  return /sap|milner browne/i.test(audience.vertical);
+}
+
+// ---------- Storage helpers (SHARED: all team members see the same data) ----------
+const SHARED = true;
+async function loadAudiences() {
+  try {
+    const r = await window.storage.get("audiences", SHARED);
+    return r ? JSON.parse(r.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveAudiences(list) {
+  try {
+    await window.storage.set("audiences", JSON.stringify(list), SHARED);
+  } catch (e) {
+    console.error("save audiences failed", e);
+  }
+}
+async function loadEmails(audienceId) {
+  try {
+    const r = await window.storage.get("emails:" + audienceId, SHARED);
+    return r ? JSON.parse(r.value) : [];
+  } catch {
+    return [];
+  }
+}
+async function saveEmails(audienceId, emails) {
+  try {
+    await window.storage.set("emails:" + audienceId, JSON.stringify(emails), SHARED);
+  } catch (e) {
+    console.error("save emails failed", e);
+  }
+}
+
+// Single shared log of sent emails — one key, so the History board loads instantly.
+async function loadSentLog() {
+  try {
+    const r = await window.storage.get("sentlog", SHARED);
+    return r ? JSON.parse(r.value) : null; // null = log not built yet
+  } catch {
+    return null;
+  }
+}
+async function saveSentLog(log) {
+  try {
+    await window.storage.set("sentlog", JSON.stringify(log), SHARED);
+  } catch (e) {
+    console.error("save sent log failed", e);
+  }
+}
+async function addToSentLog(entry) {
+  const log = (await loadSentLog()) || [];
+  if (!log.some((l) => l.emailId === entry.emailId)) {
+    log.unshift(entry);
+    await saveSentLog(log);
+  }
+}
+async function removeFromSentLog(predicate) {
+  const log = await loadSentLog();
+  if (!log) return;
+  const next = log.filter((l) => !predicate(l));
+  if (next.length !== log.length) await saveSentLog(next);
+}
+
+// ---------- CRM: engaged contacts per audience (single shared key) ----------
+async function loadCrm() {
+  try {
+    const r = await window.storage.get("crm", SHARED);
+    return r ? JSON.parse(r.value) : {};
+  } catch {
+    return {};
+  }
+}
+async function saveCrm(crm) {
+  try {
+    await window.storage.set("crm", JSON.stringify(crm), SHARED);
+  } catch (e) {
+    console.error("save crm failed", e);
+  }
+}
+
+// Interest level from click count.
+function interest(clicks) {
+  if (clicks >= 5) return { label: "High", color: "#1B7A3D", bg: "#E4F3E9", rank: 3 };
+  if (clicks >= 2) return { label: "Warm", color: "#8A6D00", bg: "#FBF3D9", rank: 2 };
+  return { label: "Low", color: BRAND.inkSoft, bg: BRAND.tintLight, rank: 1 };
+}
+
+// Turn spreadsheet rows (array of arrays) into contact records {name, email, clicks}.
+function rowsToContacts(rows) {
+  if (!rows || rows.length === 0) return [];
+  const header = rows[0].map((c) => String(c || "").toLowerCase().trim());
+  const idx = {
+    email: header.findIndex((h) => h.includes("email")),
+    clicks: header.findIndex((h) => h.includes("click")),
+    name: header.findIndex((h) => h.includes("name") && !h.includes("first") && !h.includes("last") && !h.includes("company")),
+    first: header.findIndex((h) => h.includes("first")),
+    last: header.findIndex((h) => h.includes("last")),
+    company: header.findIndex((h) => h.includes("company") || h.includes("organisation") || h.includes("organization")),
+  };
+  const hasHeader = idx.email >= 0 || idx.name >= 0 || idx.first >= 0 || idx.clicks >= 0;
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const out = [];
+  for (const r of dataRows) {
+    if (!r || r.every((c) => String(c || "").trim() === "")) continue;
+    let name = "", email = "", company = "", clicks = 1;
+    if (hasHeader) {
+      if (idx.name >= 0) name = String(r[idx.name] || "").trim();
+      if (!name && (idx.first >= 0 || idx.last >= 0)) {
+        name = [idx.first >= 0 ? r[idx.first] : "", idx.last >= 0 ? r[idx.last] : ""].map((x) => String(x || "").trim()).filter(Boolean).join(" ");
+      }
+      if (idx.email >= 0) email = String(r[idx.email] || "").trim();
+      if (idx.company >= 0) company = String(r[idx.company] || "").trim();
+      if (idx.clicks >= 0) {
+        const n = parseInt(r[idx.clicks], 10);
+        clicks = isNaN(n) ? 1 : Math.max(1, n);
+      }
+    } else {
+      // No headers: col 0 = name; any cell that looks like an email = email; any pure number = clicks.
+      name = String(r[0] || "").trim();
+      for (const c of r.slice(1)) {
+        const s = String(c || "").trim();
+        if (!email && /\S+@\S+\.\S+/.test(s)) email = s;
+        else if (/^\d+$/.test(s)) clicks = Math.max(1, parseInt(s, 10));
+      }
+    }
+    if (!name && !email) continue;
+    if (!name) name = email.split("@")[0];
+    out.push({ name, email, company, clicks });
+  }
+  return out;
+}
+
+// Merge imported contacts into an audience's existing list: match by email (else name), add clicks.
+function mergeContacts(existing, imported) {
+  const list = [...existing];
+  const key = (c) => (c.email ? "e:" + c.email.toLowerCase() : "n:" + c.name.toLowerCase());
+  const map = new Map(list.map((c, i) => [key(c), i]));
+  let added = 0, updated = 0;
+  for (const imp of imported) {
+    const k = key(imp);
+    if (map.has(k)) {
+      const i = map.get(k);
+      list[i] = { ...list[i], clicks: (list[i].clicks || 0) + imp.clicks, email: list[i].email || imp.email, company: list[i].company || imp.company, updatedAt: Date.now() };
+      updated++;
+    } else {
+      list.push({ id: "c_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7), name: imp.name, email: imp.email, company: imp.company, clicks: imp.clicks, notes: [], followUpDate: null, addedAt: Date.now(), updatedAt: Date.now() });
+      map.set(k, list.length - 1);
+      added++;
+    }
+  }
+  return { list, added, updated };
+}
+
+// ---------- One-time example contact so the team can see how follow-ups work ----------
+async function seedExampleContact() {
+  try {
+    const flag = await window.storage.get("example-contact", true);
+    if (flag && flag.value === "v1") return;
+  } catch {}
+  const crm = await loadCrm();
+  let audiences = [];
+  try {
+    const r = await window.storage.get("audiences", true);
+    audiences = r ? JSON.parse(r.value) : [];
+  } catch {}
+  if (audiences.length === 0) return;
+  const target = audiences.find((a) => a.id === "seed_food-and-drink_ireland") || audiences[0];
+  const list = crm[target.id] || [];
+  const d = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000);
+  const p = (n) => String(n).padStart(2, "0");
+  list.push({
+    id: "c_example",
+    name: "Aoife Byrne (example)",
+    email: "aoife.byrne@sampledistribution.ie",
+    company: "Sample Distribution Ltd",
+    clicks: 6,
+    notes: [
+      { text: "Example contact so you can see how this works — clicked two campaigns, asked about batch tracking. Open me, add a note, or remove me.", at: Date.now() },
+    ],
+    followUpDate: d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()),
+    addedAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+  crm[target.id] = list;
+  await saveCrm(crm);
+  try {
+    await window.storage.set("example-contact", "v1", true);
+  } catch {}
+}
+
+// ---------- One-time migration: merge each user's personal data into the shared workspace ----------
+async function migratePersonalToShared() {
+  let personal = [];
+  try {
+    const r = await window.storage.get("audiences", false);
+    personal = r ? JSON.parse(r.value) : [];
+  } catch {
+    personal = [];
+  }
+  if (personal.length === 0) return;
+
+  let shared = [];
+  try {
+    const r = await window.storage.get("audiences", true);
+    shared = r ? JSON.parse(r.value) : [];
+  } catch {
+    shared = [];
+  }
+
+  const sharedIds = new Set(shared.map((a) => a.id));
+  const toAdd = personal.filter((a) => !sharedIds.has(a.id));
+  if (toAdd.length > 0) {
+    await window.storage.set("audiences", JSON.stringify([...shared, ...toAdd]), true);
+  }
+
+  for (const aud of personal) {
+    let personalEmails = [];
+    try {
+      const r = await window.storage.get("emails:" + aud.id, false);
+      personalEmails = r ? JSON.parse(r.value) : [];
+    } catch {
+      personalEmails = [];
+    }
+    if (personalEmails.length === 0) continue;
+
+    let sharedEmails = [];
+    try {
+      const r = await window.storage.get("emails:" + aud.id, true);
+      sharedEmails = r ? JSON.parse(r.value) : [];
+    } catch {
+      sharedEmails = [];
+    }
+    const seen = new Set(sharedEmails.map((e) => e.id));
+    const newOnes = personalEmails.filter((e) => !seen.has(e.id));
+    if (newOnes.length > 0) {
+      const merged = [...sharedEmails, ...newOnes].sort((a, b) => b.createdAt - a.createdAt);
+      await window.storage.set("emails:" + aud.id, JSON.stringify(merged), true);
+    }
+  }
+
+  try {
+    await window.storage.delete("audiences", false);
+  } catch {}
+}
+
+// ---------- One-time seed: pre-load the full audience grid (SEED_PLAN) with owners ----------
+async function seedDefaultAudiences() {
+  // Bump the flag (v2) whenever SEED_PLAN changes so the new audiences appear once.
+  try {
+    const flag = await window.storage.get("seeded", true);
+    if (flag && flag.value === "v2") return;
+  } catch {
+    // flag missing — proceed with seeding
+  }
+
+  let shared = [];
+  try {
+    const r = await window.storage.get("audiences", true);
+    shared = r ? JSON.parse(r.value) : [];
+  } catch {
+    shared = [];
+  }
+
+  const byKey = new Map(shared.map((a) => [slug(a.vertical) + "|" + slug(a.region), a]));
+  let t = Date.now();
+  let changed = false;
+  for (const [vertical, regions] of SEED_PLAN) {
+    for (const region of regions) {
+      const key = slug(vertical) + "|" + slug(region);
+      const owner = AUDIENCE_OWNERS[region] || "";
+      const existing = byKey.get(key);
+      if (existing) {
+        // Backfill an owner onto an audience that was created before this seed.
+        if (owner && !existing.owner) {
+          existing.owner = owner;
+          changed = true;
+        }
+        continue;
+      }
+      const a = {
+        id: "seed_" + slug(vertical) + "_" + slug(region),
+        vertical,
+        region,
+        description: SEED[vertical] ? SEED[vertical].who : "",
+        painPoints: SEED[vertical] ? SEED[vertical].pain : "",
+        owner,
+        startDate: null,
+        cadenceDays: null,
+        createdAt: t++,
+      };
+      shared.push(a);
+      byKey.set(key, a);
+      changed = true;
+    }
+  }
+  if (changed) {
+    await window.storage.set("audiences", JSON.stringify(shared), true);
+  }
+  try {
+    await window.storage.set("seeded", "v2", true);
+  } catch {}
+}
+
+// ---------- Backup & restore: snapshot every stored key so upgrades are always safe ----------
+const BACKUP_MARKER = "enterpryze-campaign-studio-backup";
+
+// Reject if a promise never settles — the stored data bridge can hang in the published
+// app, which is what left the backup button stuck on "Working…" forever.
+function withTimeout(promise, ms, label) {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error((label || "That step") + " took too long and timed out")), ms)
+    ),
+  ]);
+}
+
+async function exportAllData() {
+  const audiences = await loadAudiences();
+  const emailSets = await Promise.all(
+    audiences.map(async (a) => [a.id, await loadEmails(a.id)])
+  );
+  const emails = Object.fromEntries(emailSets);
+  const sentlog = (await loadSentLog()) || [];
+  const crm = await loadCrm();
+  return {
+    app: BACKUP_MARKER,
+    appName: "Enterpryze Campaign Studio",
+    version: 1,
+    backupVersion: 1,
+    exportedAt: new Date().toISOString(),
+    audiences,
+    emails,
+    sentlog,
+    crm,
+  };
+}
+
+async function restoreFromBackup(data) {
+  if (!data || data.app !== BACKUP_MARKER || !Array.isArray(data.audiences)) {
+    throw new Error("That file doesn't look like a Campaign Studio backup.");
+  }
+  await saveAudiences(data.audiences);
+  for (const a of data.audiences) {
+    await saveEmails(a.id, (data.emails && data.emails[a.id]) || []);
+  }
+  await saveSentLog(data.sentlog || []);
+  await saveCrm(data.crm || {});
+  // Mark one-time seeds as done so a restore is never overwritten by fresh seeding.
+  try {
+    await window.storage.set("seeded", "v2", true);
+    await window.storage.set("example-contact", "v1", true);
+  } catch {}
+}
+
+// ---------- Claude API (uses the built-in in-page helper — no key, no CORS) ----------
+async function callClaude(messages, tools, maxTokens) {
+  if (!(window.claude && typeof window.claude.complete === "function")) {
+    throw new Error("The AI writing service isn't available in this environment.");
+  }
+  const req = { messages, max_tokens: maxTokens || 1000, model: "claude-sonnet-4-5" };
+  // Only client-side tools are supported in-page; server tools (web search) are skipped.
+  if (tools && tools.length && !tools.some((t) => /web_search|_2025/.test(t.type || ""))) {
+    req.tools = tools;
+  }
+  const text = await window.claude.complete(req);
+  if (!text) throw new Error("No response from the AI service.");
+  return String(text);
+}
+
+// Parse a labeled-sections response — far more robust than JSON for multi-paragraph email bodies.
+function parseEmailSections(text) {
+  const grab = (label, multiline) => {
+    const re = multiline
+      ? new RegExp(label + ":\\s*([\\s\\S]*?)(?=\\n(?:SUBJECT|PREVIEW|ANGLE|BODY):|$)", "i")
+      : new RegExp(label + ":\\s*(.+)", "i");
+    const m = text.match(re);
+    return m ? m[1].trim() : "";
+  };
+  const subject = grab("SUBJECT");
+  const preview = grab("PREVIEW");
+  const angle = grab("ANGLE");
+  const bodyM = text.match(/BODY:\s*([\s\S]*)$/i);
+  const body = bodyM ? bodyM[1].trim() : "";
+  if (!subject || !body) throw new Error("Could not read the generated email.");
+  return { subject, preview, angle: angle || "general", body };
+}
+
+// Step 1: industry briefing. Live web research isn't available in-page, so Emma writes
+// from the audience's known pain points — always brand-safe (no invented news).
+async function researchIndustry(audience) {
+  return "No live briefing available today — write from the audience's known pain points. Do not reference any news, dates, tariffs, figures, regulations or current events.";
+}
+
+// (kept for reference) the original web-research prompt this replaced:
+async function researchIndustryPrompt(audience) {
+  const prompt = `You are a market researcher for a B2B software company. Search the web for what is happening RIGHT NOW (last 1-3 months) that would matter to this audience:
+
+- Audience: ${audience.vertical}
+- Region: ${audience.region}
+- Who they are: ${audience.description || "SME owners and operations managers"}
+
+Focus on: cost pressures, supply chain, labour, compliance deadlines, technology and software changes (including end-of-support or upgrade deadlines where relevant), and anything an SME decision-maker in this audience would be worried about or acting on this quarter.
+
+Then reply with a plain-text briefing of 4-6 short bullet points. For each bullet: one current, specific development, why it matters to this audience, and the source it came from (publication or organisation name). Only include developments you actually found in search results — do not invent or assume any. No preamble, just the bullets.`;
+  return callClaude(
+    [{ role: "user", content: prompt }],
+    [{ type: "web_search_20250305", name: "web_search" }],
+    2000
+  );
+}
+
+// Step 2: write the email, avoiding previous angles
+async function writeEmail(audience, insights, previousEmails, focus) {
+  const spanish = isSpanish(audience);
+  const partner = isPartnerAudience(audience);
+  const history = previousEmails
+    .slice(0, 12)
+    .map((e) => `- Subject: "${e.subject}" | Angle: ${e.angle}`)
+    .join("\n");
+
+  const brandRule = partner
+    ? `- This audience works with SAP Business One, so you may reference SAP Business One naturally as part of the partner conversation. Enterpryze and Milner Browne are the brands making the offer.`
+    : `- Never mention SAP or SAP Business One, or any underlying platform or technology partner. This is a strict brand rule.`;
+
+  const prompt = `You are Emma, who writes outbound marketing emails for Enterpryze, a cloud business management platform (ERP) for small and mid-sized businesses. Enterpryze covers inventory, sales, purchasing, finance, CRM and mobile apps for teams on the move.
+
+HARD RULES:
+${brandRule}
+- The email body MUST start with exactly: Hi *|FNAME|*,
+- Where the reader's company is referenced, use the exact Mailchimp merge tag *|COMPANY|* (keep the stars and pipes exactly). Use it at most once in the body.
+- Do NOT write a call to action, sign-off, signature or PS — those are appended automatically after your body. End your body on the last content sentence.
+- Write for the decision-makers described below. Plain, direct, human. No hype words like "revolutionize", "unlock", "game-changing", "seamless".
+- Body: greeting line plus 2-4 short paragraphs, 80-140 words total. Ground it in ONE specific development or pain point and connect it naturally to how Enterpryze helps. Do not cram in multiple product features.
+- NEWS ACCURACY: Only reference a current development if it appears in the briefing below with a source. Never invent news. Do not mention tariffs, specific components, inflation figures or specific regulations unless they are in the briefing with a source or in the campaign focus. If nothing in the briefing fits, write from the audience's known pain points instead — that is always safe.
+- Avoid overly specific examples unless they clearly apply to the whole audience.
+${spanish ? "- Write the subject, preview and body in natural business Spanish. Keep the merge tags *|FNAME|* and *|COMPANY|* exactly as they are." : ""}
+
+AUDIENCE:
+- Micro-vertical: ${audience.vertical}
+- Region: ${audience.region}
+- Who they are: ${audience.description || "SME owners and operations managers"}
+${audience.painPoints ? "- Known pain points and email guidance: " + audience.painPoints : ""}
+
+CURRENT INDUSTRY BRIEFING (from live research today):
+${insights}
+
+${focus ? "CAMPAIGN FOCUS REQUESTED BY THE TEAM: " + focus : ""}
+
+PREVIOUS EMAILS ALREADY SENT TO THIS AUDIENCE — you MUST take a different angle and a different hook from all of these. If a previous email used margin, move to stock, committed stock, expiry, traceability, reordering, reporting or another related pain point:
+${history || "(none yet — this is the first email to this audience)"}
+
+Respond in EXACTLY this format, with these four labels, nothing before or after:
+SUBJECT: subject line, under 60 characters, no clickbait
+PREVIEW: preview/preheader text, under 90 characters
+ANGLE: 3-8 word label for the hook used, e.g. expiry visibility and waste
+BODY:
+Hi *|FNAME|*,
+
+(the rest of the email body — short paragraphs separated by blank lines — NO CTA, NO sign-off, NO PS)`;
+  const raw = await callClaude([{ role: "user", content: prompt }], null, 1500);
+  const draft = parseEmailSections(raw);
+
+  // Append the fixed CTA, signature and PS (per spec, always identical).
+  const blocks = spanish ? BLOCKS_ES : BLOCKS_EN;
+  draft.body = draft.body.trim() + "\n\n" + blocks.cta + "\n\n" + blocks.signature + "\n\n" + blocks.ps;
+  return draft;
+}
+
+// ---------- Small UI atoms ----------
+function Chip({ children, color, bg }) {
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: 0.3,
+        color: color || BRAND.primary,
+        background: bg || BRAND.tintLight,
+        borderRadius: 999,
+        padding: "3px 10px",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Btn({ children, onClick, kind = "primary", disabled, small }) {
+  const styles = {
+    primary: { background: BRAND.primary, color: "#fff", border: "none" },
+    accent: { background: BRAND.accent, color: "#fff", border: "none" },
+    ghost: { background: "transparent", color: BRAND.primary, border: `1px solid ${BRAND.line}` },
+    danger: { background: "transparent", color: "#B3261E", border: `1px solid ${BRAND.line}` },
+  }[kind];
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        ...styles,
+        fontFamily: font,
+        fontSize: small ? 12 : 14,
+        fontWeight: 600,
+        borderRadius: 8,
+        padding: small ? "6px 12px" : "10px 18px",
+        cursor: disabled ? "default" : "pointer",
+        opacity: disabled ? 0.5 : 1,
+        transition: "opacity .15s",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label style={{ display: "block", marginBottom: 14 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: BRAND.ink, marginBottom: 5 }}>{label}</div>
+      {children}
+    </label>
+  );
+}
+
+const inputStyle = {
+  width: "100%",
+  boxSizing: "border-box",
+  fontFamily: font,
+  fontSize: 14,
+  color: BRAND.ink,
+  background: "#fff",
+  border: `1px solid ${BRAND.line}`,
+  borderRadius: 8,
+  padding: "9px 12px",
+  outline: "none",
+};
+
+// ---------- New audience form ----------
+function AudienceForm({ existing, onSave, onCancel }) {
+  const [vertical, setVertical] = useState(VERTICALS[0]);
+  const [customVertical, setCustomVertical] = useState("");
+  const [region, setRegion] = useState(REGIONS[0]);
+  const [customRegion, setCustomRegion] = useState("");
+  const [description, setDescription] = useState(SEED[VERTICALS[0]] ? SEED[VERTICALS[0]].who : "");
+  const [painPoints, setPainPoints] = useState(SEED[VERTICALS[0]] ? SEED[VERTICALS[0]].pain : "");
+  const [dupError, setDupError] = useState("");
+  const [owner, setOwner] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [cadenceDays, setCadenceDays] = useState(14);
+
+  const finalVertical = vertical === "__custom" ? customVertical.trim() : vertical;
+  const finalRegion = region === "__custom" ? customRegion.trim() : region;
+  const valid = finalVertical && finalRegion;
+
+  // When the micro-vertical changes, prefill who/pain from the seed template (still editable).
+  const pickVertical = (v) => {
+    setVertical(v);
+    setDupError("");
+    if (v !== "__custom") {
+      setDescription(SEED[v] ? SEED[v].who : "");
+      setPainPoints(SEED[v] ? SEED[v].pain : "");
+    }
+  };
+
+  const trySave = () => {
+    const dup = existing.some(
+      (a) => slug(a.vertical) === slug(finalVertical) && slug(a.region) === slug(finalRegion)
+    );
+    if (dup) {
+      setDupError("This audience already exists.");
+      return;
+    }
+    onSave({
+      id: "aud_" + Date.now(),
+      vertical: finalVertical,
+      region: finalRegion,
+      description: description.trim(),
+      painPoints: painPoints.trim(),
+      owner: owner.trim(),
+      startDate: startDate || null,
+      cadenceDays: startDate ? cadenceDays : null,
+      createdAt: Date.now(),
+    });
+  };
+
+  return (
+    <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, padding: 24, maxWidth: 640 }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: 18, color: BRAND.ink }}>New audience</h2>
+      <p style={{ margin: "0 0 18px", fontSize: 13, color: BRAND.inkSoft }}>
+        An audience is a micro-vertical in a region. Picking a micro-vertical prefills the details — edit them if needed.
+      </p>
+      <Field label="Micro-vertical">
+        <select value={vertical} onChange={(e) => pickVertical(e.target.value)} style={inputStyle}>
+          {VERTICALS.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+          <option value="__custom">Other…</option>
+        </select>
+        {vertical === "__custom" && (
+          <input style={{ ...inputStyle, marginTop: 8 }} placeholder="e.g. Pharma Wholesale" value={customVertical} onChange={(e) => { setCustomVertical(e.target.value); setDupError(""); }} />
+        )}
+      </Field>
+      <Field label="Region">
+        <select value={region} onChange={(e) => { setRegion(e.target.value); setDupError(""); }} style={inputStyle}>
+          {REGIONS.map((r) => (
+            <option key={r} value={r}>{r}</option>
+          ))}
+          <option value="__custom">Other…</option>
+        </select>
+        {region === "__custom" && (
+          <input style={{ ...inputStyle, marginTop: 8 }} placeholder="e.g. Ontario" value={customRegion} onChange={(e) => { setCustomRegion(e.target.value); setDupError(""); }} />
+        )}
+      </Field>
+      <Field label="Who they are">
+        <textarea
+          style={{ ...inputStyle, minHeight: 96, resize: "vertical" }}
+          placeholder="Who is in this audience — roles, company types, what they manage"
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+        />
+      </Field>
+      <Field label="Known pain points & email guidance">
+        <textarea
+          style={{ ...inputStyle, minHeight: 96, resize: "vertical" }}
+          placeholder="Pain points and what the emails should focus on"
+          value={painPoints}
+          onChange={(e) => setPainPoints(e.target.value)}
+        />
+      </Field>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 160px" }}>
+          <Field label="Owner">
+            <input style={inputStyle} placeholder="e.g. Vik" value={owner} onChange={(e) => setOwner(e.target.value)} />
+          </Field>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <Field label="First send date (optional)">
+            <input type="date" style={inputStyle} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </Field>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <Field label="Cadence">
+            <select style={inputStyle} value={cadenceDays} onChange={(e) => setCadenceDays(Number(e.target.value))} disabled={!startDate}>
+              {CADENCES.map((c) => (
+                <option key={c.days} value={c.days}>{c.label}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
+      </div>
+      {dupError && <div style={{ fontSize: 13, color: "#B3261E", marginBottom: 12 }}>{dupError}</div>}
+      <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+        <Btn disabled={!valid} onClick={trySave}>Create audience</Btn>
+        <Btn kind="ghost" onClick={onCancel}>Cancel</Btn>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Email card ----------
+function EmailCard({ email, onDelete, onMarkSent }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    const text = `Subject: ${email.subject}\nPreview: ${email.preview}\n\n${email.body}`;
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+  return (
+    <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0, flex: "1 1 260px" }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.ink }}>{email.subject}</div>
+          <div style={{ fontSize: 12.5, color: BRAND.inkSoft, marginTop: 2 }}>{email.preview}</div>
+          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            <Chip color={BRAND.secondary} bg="#FBEAF5">{email.angle}</Chip>
+            {email.sentAt ? (
+              <Chip color="#1B7A3D" bg="#E4F3E9">Sent {new Date(email.sentAt).toLocaleDateString("en-IE", { day: "numeric", month: "short" })}</Chip>
+            ) : (
+              <Chip color="#8A6D00" bg="#FBF3D9">Draft</Chip>
+            )}
+            <span style={{ fontSize: 11.5, color: BRAND.inkSoft }}>
+              created {new Date(email.createdAt).toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" })}
+            </span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap" }}>
+          {!email.sentAt && <Btn kind="primary" small onClick={onMarkSent}>Mark as sent</Btn>}
+          <Btn kind="ghost" small onClick={() => setOpen(!open)}>{open ? "Hide" : "View"}</Btn>
+          <Btn kind="ghost" small onClick={copy}>{copied ? "Copied ✓" : "Copy"}</Btn>
+          <Btn kind="danger" small onClick={onDelete}>Delete</Btn>
+        </div>
+      </div>
+      {open && (
+        <div style={{ marginTop: 14, borderTop: `1px solid ${BRAND.line}`, paddingTop: 14 }}>
+          <div style={{ fontSize: 12, color: BRAND.inkSoft, marginBottom: 8 }}>From: Emma@enterpryze.com</div>
+          <div style={{ fontSize: 14, color: BRAND.ink, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{email.body}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Contact editor (used in audience view and follow-ups board) ----------
+function weekFromToday() {
+  const d = new Date(Date.now() + 7 * DAY);
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+function ContactEditor({ contact, onSave, onDelete }) {
+  const [followUp, setFollowUp] = useState(contact.followUpDate || weekFromToday());
+  const [note, setNote] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+
+  const save = async () => {
+    const updated = {
+      ...contact,
+      followUpDate: followUp || null,
+      notes: note.trim() ? [{ text: note.trim(), at: Date.now() }, ...(contact.notes || [])] : contact.notes || [],
+      updatedAt: Date.now(),
+    };
+    await onSave(updated);
+    setNote("");
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1600);
+  };
+
+  return (
+    <div style={{ marginTop: 12, borderTop: `1px solid ${BRAND.line}`, paddingTop: 12 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>Next contact</div>
+          <input type="date" style={{ ...inputStyle, width: "auto" }} value={followUp} onChange={(e) => setFollowUp(e.target.value)} />
+        </div>
+        <div style={{ flex: "1 1 220px" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>Add a note</div>
+          <input style={inputStyle} placeholder="e.g. Replied asking about pricing — call Thursday" value={note} onChange={(e) => setNote(e.target.value)} />
+        </div>
+        <Btn small onClick={save}>{saved ? "Saved ✓" : "Save"}</Btn>
+        {onDelete && (confirmRemove ? (
+          <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: BRAND.ink }}>Remove?</span>
+            <Btn kind="danger" small onClick={onDelete}>Yes</Btn>
+            <Btn kind="ghost" small onClick={() => setConfirmRemove(false)}>No</Btn>
+          </span>
+        ) : (
+          <Btn kind="danger" small onClick={() => setConfirmRemove(true)}>Remove contact</Btn>
+        ))}
+      </div>
+      {(contact.notes || []).length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {(contact.notes || []).map((n, i) => (
+            <div key={i} style={{ fontSize: 12.5, color: BRAND.ink, padding: "5px 0", borderTop: i === 0 ? "none" : `1px dotted ${BRAND.line}` }}>
+              <span style={{ color: BRAND.inkSoft, fontSize: 11.5 }}>{new Date(n.at).toLocaleDateString("en-IE", { day: "numeric", month: "short" })} — </span>
+              {n.text}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Contact row ----------
+function ContactRow({ contact, extra, onSave, onDelete, defaultOpen }) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  const lvl = interest(contact.clicks || 0);
+  const today = startOfToday();
+  const overdue = contact.followUpDate && parseDate(contact.followUpDate) < today;
+  return (
+    <div style={{ borderTop: `1px solid ${BRAND.line}`, padding: "12px 16px", background: overdue ? "#FFF8F7" : "transparent" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: BRAND.ink }}>{contact.name}</div>
+          <div style={{ fontSize: 12, color: BRAND.inkSoft }}>
+            {contact.email || "no email"}{contact.company ? " · " + contact.company : ""}{extra ? " · " + extra : ""}
+          </div>
+        </div>
+        <Chip color={lvl.color} bg={lvl.bg}>{lvl.label} · {contact.clicks || 0} click{(contact.clicks || 0) === 1 ? "" : "s"}</Chip>
+        {contact.followUpDate ? (
+          <Chip color={overdue ? "#B3261E" : BRAND.primary} bg={overdue ? "#FBE9E7" : BRAND.tintLight}>
+            {overdue ? "Overdue: " : "Follow up: "}{fmtDate(parseDate(contact.followUpDate))}
+          </Chip>
+        ) : (
+          <span style={{ fontSize: 11.5, color: BRAND.inkSoft }}>no follow-up set</span>
+        )}
+        {(contact.notes || []).length > 0 && <span style={{ fontSize: 11.5, color: BRAND.inkSoft }}>{contact.notes.length} note{contact.notes.length === 1 ? "" : "s"}</span>}
+        <Btn kind="ghost" small onClick={() => setOpen(!open)}>{open ? "Close" : "Open"}</Btn>
+      </div>
+      {open && <ContactEditor contact={contact} onSave={onSave} onDelete={onDelete} />}
+    </div>
+  );
+}
+
+// ---------- Engaged contacts section (per audience) ----------
+function ContactsSection({ audience }) {
+  const [contacts, setContacts] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [summary, setSummary] = useState("");
+  const fileRef = useRef(null);
+
+  useEffect(() => {
+    let live = true;
+    loadCrm().then((crm) => live && setContacts(crm[audience.id] || []));
+    return () => (live = false);
+  }, [audience.id]);
+
+  const applyImport = async (imported) => {
+    if (imported.length === 0) {
+      setSummary("Nothing recognisable found — expected columns like Name, Email, Clicks.");
+      return;
+    }
+    const crm = await loadCrm();
+    const current = crm[audience.id] || [];
+    const { list, added, updated } = mergeContacts(current, imported);
+    crm[audience.id] = list;
+    await saveCrm(crm);
+    setContacts(list);
+    setSummary(`Imported: ${added} new contact${added === 1 ? "" : "s"}, ${updated} updated with additional clicks.`);
+    setPasteText("");
+  };
+
+  const onFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf);
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+      await applyImport(rowsToContacts(rows));
+    } catch (err) {
+      console.error(err);
+      setSummary("Couldn't read that file — please use .xlsx or .csv.");
+    }
+    e.target.value = "";
+  };
+
+  const onPaste = async () => {
+    const rows = pasteText
+      .split(/\r?\n/)
+      .filter((l) => l.trim() !== "")
+      .map((l) => (l.includes("\t") ? l.split("\t") : l.split(",")));
+    await applyImport(rowsToContacts(rows));
+  };
+
+  const saveContact = async (updated) => {
+    const crm = await loadCrm();
+    const list = (crm[audience.id] || []).map((c) => (c.id === updated.id ? updated : c));
+    crm[audience.id] = list;
+    await saveCrm(crm);
+    setContacts(list);
+  };
+
+  const deleteContact = async (id) => {
+    const crm = await loadCrm();
+    const list = (crm[audience.id] || []).filter((c) => c.id !== id);
+    crm[audience.id] = list;
+    await saveCrm(crm);
+    setContacts(list);
+  };
+
+  const sorted = (contacts || []).slice().sort((a, b) => (b.clicks || 0) - (a.clicks || 0));
+
+  return (
+    <div style={{ marginTop: 26 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: BRAND.inkSoft }}>
+          Engaged contacts — clicked an email ({(contacts || []).length})
+        </div>
+        <Btn kind="ghost" small onClick={() => { setImportOpen(!importOpen); setSummary(""); }}>
+          {importOpen ? "Close import" : "Import clicks"}
+        </Btn>
+      </div>
+
+      {importOpen && (
+        <div style={{ background: BRAND.tintLight, border: `1px solid ${BRAND.line}`, borderRadius: 12, padding: 16, marginBottom: 12 }}>
+          <div style={{ fontSize: 13, color: BRAND.ink, marginBottom: 10, lineHeight: 1.5 }}>
+            Upload the click report (.xlsx or .csv) or paste rows copied from Excel. Columns like <strong>Name</strong> (or First/Last), <strong>Email</strong> and <strong>Clicks</strong> are detected automatically. Existing contacts (matched by email, or name if no email) get their click counts added to.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onFile} style={{ display: "none" }} />
+            <Btn small onClick={() => fileRef.current && fileRef.current.click()}>Upload file</Btn>
+            <span style={{ fontSize: 12, color: BRAND.inkSoft }}>or</span>
+            <textarea style={{ ...inputStyle, flex: "1 1 260px", minHeight: 40, resize: "vertical" }} placeholder="Paste rows from Excel here" value={pasteText} onChange={(e) => setPasteText(e.target.value)} />
+            <Btn kind="ghost" small onClick={onPaste} disabled={!pasteText.trim()}>Import pasted rows</Btn>
+          </div>
+          {summary && <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600, color: BRAND.primary }}>{summary}</div>}
+        </div>
+      )}
+
+      {contacts === null && <div style={{ fontSize: 13, color: BRAND.inkSoft }}>Loading contacts…</div>}
+      {contacts !== null && contacts.length === 0 && !importOpen && (
+        <div style={{ fontSize: 13.5, color: BRAND.inkSoft, background: BRAND.card, border: `1px dashed ${BRAND.line}`, borderRadius: 12, padding: 20 }}>
+          No contacts yet. When a campaign goes out, import the click report from Excel and everyone who clicked will appear here, ranked by interest.
+        </div>
+      )}
+      {contacts !== null && contacts.length > 0 && (
+        <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "10px 16px", fontSize: 11.5, color: BRAND.inkSoft }}>Sorted by interest (click count)</div>
+          {sorted.map((c) => (
+            <ContactRow key={c.id} contact={c} onSave={saveContact} onDelete={() => deleteContact(c.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+// ---------- Generation progress ----------
+const STAGES = [
+  "Researching what's happening for this audience right now…",
+  "Checking previous emails so we don't repeat an angle…",
+  "Emma is writing the email…",
+];
+
+// ---------- Audience detail ----------
+function AudienceView({ audience, onBack, onDeleteAudience, onUpdate }) {
+  const [emails, setEmails] = useState(null);
+  const [focus, setFocus] = useState("");
+  const [stage, setStage] = useState(-1);
+  const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [schedDate, setSchedDate] = useState(audience.startDate || "");
+  const [schedCadence, setSchedCadence] = useState(audience.cadenceDays || 14);
+  const [schedSaved, setSchedSaved] = useState(false);
+  const [ownerName, setOwnerName] = useState(audience.owner || "");
+  const busy = stage >= 0;
+
+  useEffect(() => {
+    let live = true;
+    loadEmails(audience.id).then((e) => live && setEmails(e));
+    return () => (live = false);
+  }, [audience.id]);
+
+  const generate = async () => {
+    setError("");
+    setStage(0);
+    try {
+      // Research is best-effort: if it fails, Emma writes from the audience's known pain points.
+      const insights = await researchIndustry(audience).catch(
+        () => "No current briefing available today — write from the audience's known pain points instead. Do not reference any news."
+      );
+      setStage(1);
+      await new Promise((r) => setTimeout(r, 400));
+      setStage(2);
+      // Re-load shared history right before writing, in case a teammate just generated one.
+      const latest = await loadEmails(audience.id);
+      const draft = await writeEmail(audience, insights, latest, focus.trim());
+      const email = {
+        id: "em_" + Date.now(),
+        subject: draft.subject,
+        preview: draft.preview,
+        body: draft.body,
+        angle: draft.angle,
+        createdAt: Date.now(),
+      };
+      const next = [email, ...latest];
+      setEmails(next);
+      await saveEmails(audience.id, next);
+      setFocus("");
+    } catch (e) {
+      console.error(e);
+      setError("Generation failed: " + (e.message || "unknown error") + " — please try again.");
+    } finally {
+      setStage(-1);
+    }
+  };
+
+  const removeEmail = async (id) => {
+    const next = emails.filter((e) => e.id !== id);
+    setEmails(next);
+    await saveEmails(audience.id, next);
+    await removeFromSentLog((l) => l.emailId === id);
+  };
+
+  const markSent = async (id) => {
+    const sentAt = Date.now();
+    const target = emails.find((e) => e.id === id);
+    const next = emails.map((e) => (e.id === id ? { ...e, sentAt } : e));
+    setEmails(next);
+    await saveEmails(audience.id, next);
+    if (target) {
+      await addToSentLog({
+        emailId: id,
+        audienceId: audience.id,
+        vertical: audience.vertical,
+        region: audience.region,
+        subject: target.subject,
+        angle: target.angle,
+        sentAt,
+      });
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: BRAND.primary, fontFamily: font, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: 0, marginBottom: 14 }}>
+        ← All audiences
+      </button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, color: BRAND.ink }}>{audience.vertical}</h2>
+          <div style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <Chip>{audience.region}</Chip>
+            {audience.owner && <Chip color={BRAND.secondary} bg="#FBEAF5">Owner: {audience.owner}</Chip>}
+            {emails && <span style={{ fontSize: 12, color: BRAND.inkSoft }}>{emails.length} email{emails.length === 1 ? "" : "s"} generated</span>}
+          </div>
+          {audience.description && (
+            <p style={{ margin: "10px 0 0", fontSize: 13.5, color: BRAND.inkSoft, maxWidth: 640, lineHeight: 1.55 }}>{audience.description}</p>
+          )}
+        </div>
+        {confirmDelete ? (
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12.5, color: BRAND.ink }}>Delete this audience and its email history for the whole team?</span>
+            <Btn kind="danger" small onClick={onDeleteAudience}>Yes, delete</Btn>
+            <Btn kind="ghost" small onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+          </div>
+        ) : (
+          <Btn kind="danger" small onClick={() => setConfirmDelete(true)}>Delete audience</Btn>
+        )}
+      </div>
+
+      {/* Schedule panel */}
+      <div style={{ marginTop: 22, background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: BRAND.primary, marginBottom: 10 }}>Owner & send schedule</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>Owner</div>
+            <input style={{ ...inputStyle, width: 140 }} placeholder="e.g. Vik" value={ownerName} onChange={(e) => { setOwnerName(e.target.value); setSchedSaved(false); }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>First send date</div>
+            <input type="date" style={{ ...inputStyle, width: "auto" }} value={schedDate} onChange={(e) => { setSchedDate(e.target.value); setSchedSaved(false); }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>Cadence</div>
+            <select style={{ ...inputStyle, width: "auto" }} value={schedCadence} onChange={(e) => { setSchedCadence(Number(e.target.value)); setSchedSaved(false); }}>
+              {CADENCES.map((c) => (
+                <option key={c.days} value={c.days}>{c.label}</option>
+              ))}
+            </select>
+          </div>
+          <Btn
+            small
+            onClick={async () => {
+              await onUpdate({ ...audience, owner: ownerName.trim(), startDate: schedDate || null, cadenceDays: schedDate ? schedCadence : null });
+              setSchedSaved(true);
+              setTimeout(() => setSchedSaved(false), 1800);
+            }}
+          >
+            {schedSaved ? "Saved ✓" : "Save"}
+          </Btn>
+          {audience.startDate && (
+            <Btn kind="ghost" small onClick={async () => { setSchedDate(""); await onUpdate({ ...audience, startDate: null, cadenceDays: null }); }}>
+              Remove schedule
+            </Btn>
+          )}
+        </div>
+        {audience.startDate && audience.cadenceDays && emails && (() => {
+          const s = computeSchedule(audience, emails);
+          return s ? (
+            <div style={{ marginTop: 12, fontSize: 13, color: BRAND.inkSoft }}>
+              {s.overdue ? "Was due: " : "Next send: "}
+              <strong style={{ color: s.overdue ? "#B3261E" : BRAND.ink }}>{fmtDate(s.nextDue)}</strong>
+              {" · "}{cadenceLabel(audience.cadenceDays)}
+              {" · "}
+              {s.overdue ? (
+                <span style={{ color: "#B3261E", fontWeight: 600 }}>overdue{s.ready ? " — draft ready to send" : " — needs content"}</span>
+              ) : s.ready ? (
+                <span style={{ color: "#1B7A3D", fontWeight: 600 }}>content ready</span>
+              ) : (
+                <span style={{ color: "#B3261E", fontWeight: 600 }}>needs content</span>
+              )}
+            </div>
+          ) : null;
+        })()}
+      </div>
+
+      {/* Generate panel */}
+      <div style={{ marginTop: 22, background: BRAND.tintLight, border: `1px solid ${BRAND.line}`, borderRadius: 14, padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: BRAND.primary, marginBottom: 10 }}>
+          Generate a new email from Emma
+        </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <input
+            style={{ ...inputStyle, flex: "1 1 280px" }}
+            placeholder="Optional focus, e.g. 'lead with stock accuracy' — include a source if citing news"
+            value={focus}
+            onChange={(e) => setFocus(e.target.value)}
+            disabled={busy}
+          />
+          <Btn kind="accent" onClick={generate} disabled={busy || emails === null}>
+            {busy ? "Working…" : "Generate email"}
+          </Btn>
+        </div>
+        {busy && (
+          <div style={{ marginTop: 14 }}>
+            {STAGES.map((s, i) => (
+              <div key={s} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, padding: "3px 0", color: i <= stage ? BRAND.ink : BRAND.inkSoft, opacity: i <= stage ? 1 : 0.45 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 999, background: i < stage ? BRAND.primary : i === stage ? BRAND.accent : BRAND.line, flexShrink: 0 }} />
+                {s}
+              </div>
+            ))}
+          </div>
+        )}
+        {error && <div style={{ marginTop: 12, fontSize: 13, color: "#B3261E" }}>{error}</div>}
+        <div style={{ marginTop: 12, fontSize: 11.5, color: BRAND.inkSoft }}>
+          Emails use Mailchimp merge tags (*|FNAME|*, *|COMPANY|*) and automatically include the standard CTA, signature and PS. Emma checks the whole team's previous emails to this audience before choosing an angle.
+        </div>
+      </div>
+
+      {/* Engaged contacts */}
+      <ContactsSection audience={audience} />
+
+      {/* History */}
+      <div style={{ marginTop: 26 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: BRAND.inkSoft, marginBottom: 12 }}>
+          Email history — angles already used
+        </div>
+        {emails === null && <div style={{ fontSize: 13, color: BRAND.inkSoft }}>Loading…</div>}
+        {emails && emails.length === 0 && (
+          <div style={{ fontSize: 13.5, color: BRAND.inkSoft, background: BRAND.card, border: `1px dashed ${BRAND.line}`, borderRadius: 12, padding: 20 }}>
+            No emails yet for this audience. Generate the first one above — every email after it will automatically take a different angle.
+          </div>
+        )}
+        {emails && emails.map((e) => <EmailCard key={e.id} email={e} onDelete={() => removeEmail(e.id)} onMarkSent={() => markSent(e.id)} />)}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Planning board (flight board) ----------
+function PlanningBoard({ audiences, onOpen }) {
+  const [rows, setRows] = useState(null);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const scheduled = audiences.filter((a) => a.startDate && a.cadenceDays);
+      const out = (
+        await Promise.all(
+          scheduled.map(async (a) => {
+            const emails = await loadEmails(a.id);
+            const s = computeSchedule(a, emails);
+            return s ? { audience: a, ...s } : null;
+          })
+        )
+      ).filter(Boolean);
+      out.sort((x, y) => x.nextDue - y.nextDue || x.audience.vertical.localeCompare(y.audience.vertical));
+      if (live) setRows(out);
+    })();
+    return () => (live = false);
+  }, [audiences]);
+
+  const unscheduled = audiences.filter((a) => !a.startDate || !a.cadenceDays);
+
+  const statusChip = (r) => {
+    if (r.ready) return <Chip color="#1B7A3D" bg="#E4F3E9">Content ready</Chip>;
+    if (r.overdue) return <Chip color="#B3261E" bg="#FBE9E7">Overdue — needs content</Chip>;
+    if (r.daysUntil <= 3) return <Chip color="#B3261E" bg="#FBE9E7">Needs content</Chip>;
+    return <Chip color="#8A6D00" bg="#FBF3D9">Needs content</Chip>;
+  };
+  const dueLabel = (r) => {
+    if (r.overdue) return Math.abs(r.daysUntil) === 1 ? "1 day overdue" : Math.abs(r.daysUntil) + " days overdue";
+    if (r.daysUntil === 0) return "Today";
+    if (r.daysUntil === 1) return "Tomorrow";
+    return "in " + r.daysUntil + " days";
+  };
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 4px", fontSize: 22, color: BRAND.ink }}>Planning board</h2>
+      <p style={{ margin: "0 0 20px", fontSize: 13.5, color: BRAND.inkSoft, maxWidth: 640, lineHeight: 1.55 }}>
+        Every scheduled audience, sorted by next send. "Content ready" means an email has been generated in the current cycle; "Needs content" means it's time to generate one.
+      </p>
+
+      {rows === null && <div style={{ fontSize: 13, color: BRAND.inkSoft }}>Loading the board…</div>}
+
+      {rows !== null && rows.length === 0 && (
+        <div style={{ fontSize: 13.5, color: BRAND.inkSoft, background: BRAND.card, border: `1px dashed ${BRAND.line}`, borderRadius: 12, padding: 20 }}>
+          No audiences have a schedule yet. Open an audience and set a first send date and cadence — it will appear here automatically.
+        </div>
+      )}
+
+      {rows !== null && rows.length > 0 && (
+        <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, overflow: "hidden" }}>
+          {rows.map((r, i) => (
+            <div
+              key={r.audience.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                flexWrap: "wrap",
+                padding: "14px 18px",
+                borderTop: i === 0 ? "none" : `1px solid ${BRAND.line}`,
+                background: r.daysUntil <= 3 && !r.ready ? "#FFF8F7" : "transparent",
+              }}
+            >
+              <div style={{ width: 108, flexShrink: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 800, color: BRAND.primary }}>{fmtDate(r.nextDue)}</div>
+                <div style={{ fontSize: 11.5, color: BRAND.inkSoft }}>{dueLabel(r)}</div>
+              </div>
+              <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: BRAND.ink }}>{r.audience.vertical}</div>
+                <div style={{ fontSize: 12, color: BRAND.inkSoft }}>{r.audience.region} · {cadenceLabel(r.audience.cadenceDays)}</div>
+              </div>
+              <div style={{ flexShrink: 0 }}>{statusChip(r)}</div>
+              <div style={{ flexShrink: 0 }}>
+                <Btn kind={r.ready ? "ghost" : "accent"} small onClick={() => onOpen(r.audience.id)}>
+                  {r.ready ? "Open" : "Generate →"}
+                </Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {unscheduled.length > 0 && (
+        <div style={{ marginTop: 22 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: BRAND.inkSoft, marginBottom: 10 }}>
+            Not scheduled yet ({unscheduled.length})
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {unscheduled.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => onOpen(a.id)}
+                style={{ background: BRAND.card, border: `1px dashed ${BRAND.line}`, borderRadius: 999, padding: "6px 14px", fontFamily: font, fontSize: 12.5, color: BRAND.inkSoft, cursor: "pointer" }}
+              >
+                {a.vertical} — {a.region}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- History board: everything that was sent ----------
+function HistoryBoard({ audiences, onOpen }) {
+  const [rows, setRows] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      try {
+        let log = await loadSentLog();
+        if (log === null) {
+          // Log never built (e.g. emails were marked sent on the old version) — build it once
+          // by scanning audiences in parallel, then save so future loads are a single read.
+          const results = await Promise.all(
+            audiences.map(async (a) => {
+              const emails = await loadEmails(a.id);
+              return emails
+                .filter((e) => e.sentAt)
+                .map((e) => ({
+                  emailId: e.id,
+                  audienceId: a.id,
+                  vertical: a.vertical,
+                  region: a.region,
+                  subject: e.subject,
+                  angle: e.angle,
+                  sentAt: e.sentAt,
+                }));
+            })
+          );
+          log = results.flat();
+          await saveSentLog(log);
+        }
+        log.sort((x, y) => y.sentAt - x.sentAt);
+        if (live) setRows(log);
+      } catch (e) {
+        console.error("history load failed", e);
+        if (live) setFailed(true);
+      }
+    })();
+    return () => (live = false);
+  }, [audiences]);
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 4px", fontSize: 22, color: BRAND.ink }}>History</h2>
+      <p style={{ margin: "0 0 20px", fontSize: 13.5, color: BRAND.inkSoft, maxWidth: 640, lineHeight: 1.55 }}>
+        Everything the team has marked as sent, most recent first.
+      </p>
+
+      {rows === null && !failed && <div style={{ fontSize: 13, color: BRAND.inkSoft }}>Loading history…</div>}
+
+      {failed && (
+        <div style={{ fontSize: 13.5, color: "#B3261E", background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 12, padding: 20 }}>
+          Couldn't load history — please try again in a moment.
+        </div>
+      )}
+
+      {rows !== null && rows.length === 0 && (
+        <div style={{ fontSize: 13.5, color: BRAND.inkSoft, background: BRAND.card, border: `1px dashed ${BRAND.line}`, borderRadius: 12, padding: 20 }}>
+          Nothing sent yet. When an email goes out, open it in its audience and hit "Mark as sent" — it will show up here.
+        </div>
+      )}
+
+      {rows !== null && rows.length > 0 && (
+        <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, overflow: "hidden" }}>
+          {rows.map((r, i) => (
+            <div
+              key={r.emailId}
+              style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", padding: "14px 18px", borderTop: i === 0 ? "none" : `1px solid ${BRAND.line}` }}
+            >
+              <div style={{ width: 108, flexShrink: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 800, color: BRAND.primary }}>{fmtDate(r.sentAt)}</div>
+                <div style={{ fontSize: 11.5, color: BRAND.inkSoft }}>{new Date(r.sentAt).getFullYear()}</div>
+              </div>
+              <div style={{ flex: "1 1 240px", minWidth: 0 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: BRAND.ink }}>{r.subject}</div>
+                <div style={{ fontSize: 12, color: BRAND.inkSoft }}>{r.vertical} — {r.region}</div>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                <Chip color={BRAND.secondary} bg="#FBEAF5">{r.angle}</Chip>
+              </div>
+              <div style={{ flexShrink: 0 }}>
+                <Btn kind="ghost" small onClick={() => onOpen(r.audienceId)}>Open</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Follow-ups board: contacts to work, by owner ----------
+function FollowUpsBoard({ audiences, onOpen }) {
+  const [crm, setCrm] = useState(null);
+  const [ownerFilter, setOwnerFilter] = useState("__all");
+  const [sortBy, setSortBy] = useState("date"); // date | interest
+
+  useEffect(() => {
+    let live = true;
+    loadCrm().then((c) => live && setCrm(c));
+    return () => (live = false);
+  }, [audiences]);
+
+  const saveContact = async (audienceId, updated) => {
+    const fresh = await loadCrm();
+    fresh[audienceId] = (fresh[audienceId] || []).map((c) => (c.id === updated.id ? updated : c));
+    await saveCrm(fresh);
+    setCrm(fresh);
+  };
+
+  const deleteContact = async (audienceId, id) => {
+    const fresh = await loadCrm();
+    fresh[audienceId] = (fresh[audienceId] || []).filter((c) => c.id !== id);
+    await saveCrm(fresh);
+    setCrm(fresh);
+  };
+
+  if (crm === null) {
+    return <div style={{ fontSize: 13, color: BRAND.inkSoft }}>Loading follow-ups…</div>;
+  }
+
+  const audById = Object.fromEntries(audiences.map((a) => [a.id, a]));
+  let rows = [];
+  for (const [audienceId, contacts] of Object.entries(crm)) {
+    const aud = audById[audienceId];
+    if (!aud) continue;
+    for (const c of contacts) rows.push({ audience: aud, contact: c });
+  }
+
+  const owners = [...new Set(audiences.map((a) => (a.owner || "").trim()).filter(Boolean))].sort();
+  if (ownerFilter !== "__all") {
+    rows = rows.filter((r) => (r.audience.owner || "").trim().toLowerCase() === ownerFilter.toLowerCase());
+  }
+
+  const today = startOfToday();
+  rows.sort((x, y) => {
+    if (sortBy === "interest") {
+      return (y.contact.clicks || 0) - (x.contact.clicks || 0);
+    }
+    // date sort: overdue first, then soonest follow-up, contacts without a date last (by interest)
+    const dx = x.contact.followUpDate ? parseDate(x.contact.followUpDate) : Infinity;
+    const dy = y.contact.followUpDate ? parseDate(y.contact.followUpDate) : Infinity;
+    if (dx !== dy) return dx - dy;
+    return (y.contact.clicks || 0) - (x.contact.clicks || 0);
+  });
+
+  const dueCount = rows.filter((r) => r.contact.followUpDate && parseDate(r.contact.followUpDate) <= today).length;
+
+  return (
+    <div>
+      <h2 style={{ margin: "0 0 4px", fontSize: 22, color: BRAND.ink }}>Follow-ups</h2>
+      <p style={{ margin: "0 0 16px", fontSize: 13.5, color: BRAND.inkSoft, maxWidth: 640, lineHeight: 1.55 }}>
+        Everyone who clicked through on a campaign, across all audiences. Interest is based on click count. {dueCount > 0 ? `${dueCount} follow-up${dueCount === 1 ? " is" : "s are"} due or overdue.` : ""}
+      </p>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+        <Btn kind={ownerFilter === "__all" ? "primary" : "ghost"} small onClick={() => setOwnerFilter("__all")}>
+          All owners
+        </Btn>
+        {owners.map((o) => (
+          <Btn key={o} kind={ownerFilter.toLowerCase() === o.toLowerCase() ? "primary" : "ghost"} small onClick={() => setOwnerFilter(o)}>
+            {o}
+          </Btn>
+        ))}
+        {owners.length === 0 && (
+          <span style={{ fontSize: 12.5, color: BRAND.inkSoft }}>
+            No owners assigned yet — open an audience and set its owner to get a button for each team member here.
+          </span>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 14 }}>
+        <span style={{ fontSize: 12, color: BRAND.inkSoft }}>Sort by:</span>
+        <Btn kind={sortBy === "date" ? "accent" : "ghost"} small onClick={() => setSortBy("date")}>Follow-up date</Btn>
+        <Btn kind={sortBy === "interest" ? "accent" : "ghost"} small onClick={() => setSortBy("interest")}>Interest</Btn>
+      </div>
+
+      {rows.length === 0 && (
+        <div style={{ fontSize: 13.5, color: BRAND.inkSoft, background: BRAND.card, border: `1px dashed ${BRAND.line}`, borderRadius: 12, padding: 20 }}>
+          No contacts yet{ownerFilter !== "__all" ? " for this owner" : ""}. Open an audience and use "Import clicks" to bring in a click report — everyone who clicked will appear here.
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, overflow: "hidden" }}>
+          <div style={{ padding: "10px 16px", fontSize: 11.5, color: BRAND.inkSoft }}>
+            {rows.length} contact{rows.length === 1 ? "" : "s"}
+          </div>
+          {rows.map((r) => (
+            <ContactRow
+              key={r.contact.id}
+              contact={r.contact}
+              extra={`${r.audience.vertical} — ${r.audience.region}${r.audience.owner ? " · " + r.audience.owner : ""}`}
+              onSave={(updated) => saveContact(r.audience.id, updated)}
+              onDelete={() => deleteContact(r.audience.id, r.contact.id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Data page: backup & restore ----------
+function DataPage({ onRestored }) {
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState("idle"); // backup button: idle | working | done | error
+  const [backupText, setBackupText] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [restoreText, setRestoreText] = useState("");
+  const [confirmRestore, setConfirmRestore] = useState(null); // parsed backup awaiting confirm
+  const fileRef = useRef(null);
+
+  const doBackup = async () => {
+    if (phase === "working") return; // guard: no repeated clicks / simultaneous exports
+    setPhase("working");
+    setStatus("");
+    setBackupText("");
+    let url = null;
+    try {
+      // Time the whole export out instead of hanging forever if the stored-data bridge
+      // never responds (the root cause of the stuck "Working…" state in the published app).
+      const data = await withTimeout(exportAllData(), 20000, "Building the backup");
+      const json = JSON.stringify(data, null, 2);
+      setBackupText(json);
+
+      // Trigger a real browser download via a Blob object URL.
+      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
+      url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "enterpryze-campaign-studio-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoke later, not immediately — revoking too early cancels the download in some browsers.
+      setTimeout(() => { if (url) URL.revokeObjectURL(url); }, 2000);
+
+      setPhase("done");
+      setStatus(`Backup downloaded: ${data.audiences.length} audiences, ${Object.values(data.emails).flat().length} emails, ${Object.values(data.crm).flat().length} contacts, ${data.sentlog.length} sent records. If your browser blocked the download, use "Copy backup" below and paste it somewhere safe (a Word doc, Notepad, OneDrive…).`);
+      setTimeout(() => setPhase((p) => (p === "done" ? "idle" : p)), 4000);
+    } catch (e) {
+      console.error("Backup download failed:", e);
+      setPhase("error");
+      setStatus("Backup failed: " + (e && e.message ? e.message : "unknown error") + ". Nothing was changed — your existing data is safe. Please try again.");
+    }
+  };
+
+  const copyBackup = () => {
+    const ta = document.createElement("textarea");
+    ta.value = backupText;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1800);
+  };
+
+  const tryParse = (text) => {
+    try {
+      const data = JSON.parse(text);
+      if (data.app !== BACKUP_MARKER || !Array.isArray(data.audiences)) throw new Error();
+      setConfirmRestore(data);
+      setStatus("");
+      return true;
+    } catch {
+      setStatus("That doesn't look like a Campaign Studio backup.");
+      return false;
+    }
+  };
+
+  const onFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      tryParse(await file.text());
+    } catch {
+      setStatus("Couldn't read that file.");
+    }
+    e.target.value = "";
+  };
+
+  const doRestore = async () => {
+    setBusy(true);
+    setStatus("");
+    try {
+      await restoreFromBackup(confirmRestore);
+      setStatus("Restore complete — all audiences, emails, contacts and history are back.");
+      setConfirmRestore(null);
+      setRestoreText("");
+      onRestored();
+    } catch (e) {
+      console.error(e);
+      setStatus("Restore failed: " + (e.message || "unknown error"));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ maxWidth: 680 }}>
+      <h2 style={{ margin: "0 0 4px", fontSize: 22, color: BRAND.ink }}>Data backup</h2>
+      <p style={{ margin: "0 0 20px", fontSize: 13.5, color: BRAND.inkSoft, lineHeight: 1.6 }}>
+        All audiences, emails, contacts, schedules and history are stored separately from the app, so publishing an upgrade never touches them. As an extra safety net, take a backup before any upgrade — it can be restored here at any time.
+      </p>
+
+      <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, padding: 20, marginBottom: 14 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: BRAND.primary, marginBottom: 8 }}>Create a backup</div>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.inkSoft, lineHeight: 1.5 }}>
+          Downloads a .json file with every audience, generated email, contact, note, schedule and the sent history. Keep it somewhere safe — you can restore it here at any time.
+        </p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn onClick={doBackup} disabled={phase === "working"}>
+            {phase === "working" ? "Preparing backup…" : phase === "done" ? "Backup downloaded ✓" : phase === "error" ? "Backup failed — try again" : "Download backup"}
+          </Btn>
+        </div>
+      </div>
+
+      <div style={{ background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 14, padding: 20 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: BRAND.primary, marginBottom: 8 }}>Restore from a backup</div>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: BRAND.inkSoft, lineHeight: 1.5 }}>
+          Paste a backup below (or upload the file if you have one). Restoring replaces everything currently in the shared workspace for the whole team.
+        </p>
+        {confirmRestore ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, color: BRAND.ink }}>
+              Backup from {new Date(confirmRestore.exportedAt).toLocaleDateString("en-IE", { day: "numeric", month: "short", year: "numeric" })} with {confirmRestore.audiences.length} audiences — replace current data?
+            </span>
+            <Btn kind="danger" small onClick={doRestore} disabled={busy}>Yes, restore</Btn>
+            <Btn kind="ghost" small onClick={() => setConfirmRestore(null)}>Cancel</Btn>
+          </div>
+        ) : (
+          <>
+            <textarea
+              placeholder="Paste your backup text here"
+              value={restoreText}
+              onChange={(e) => setRestoreText(e.target.value)}
+              style={{ ...inputStyle, minHeight: 90, fontSize: 11, fontFamily: "monospace", resize: "vertical", marginBottom: 10 }}
+            />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Btn onClick={() => tryParse(restoreText)} disabled={busy || !restoreText.trim()}>Restore from pasted text</Btn>
+              <input ref={fileRef} type="file" accept=".json" onChange={onFile} style={{ display: "none" }} />
+              <Btn kind="ghost" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>Or choose a backup file</Btn>
+            </div>
+          </>
+        )}
+      </div>
+
+      {status && <div style={{ marginTop: 14, fontSize: 13, fontWeight: 600, lineHeight: 1.5, color: status.includes("failed") || status.includes("doesn't") || status.includes("Couldn't") ? "#B3261E" : BRAND.primary }}>{status}</div>}
+    </div>
+  );
+}
+
+// ---------- App ----------
+function App() {
+  const [audiences, setAudiences] = useState(null);
+  const [sentCounts, setSentCounts] = useState({}); // audienceId -> number of sent emails (for the summary cards)
+  const [view, setView] = useState({ page: "home" }); // home | new | audience
+  const loaded = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await migratePersonalToShared();
+      } catch (e) {
+        console.error("migration skipped", e);
+      }
+      try {
+        await seedDefaultAudiences();
+      } catch (e) {
+        console.error("seeding skipped", e);
+      }
+      try {
+        await seedExampleContact();
+      } catch (e) {
+        console.error("example contact skipped", e);
+      }
+      const a = await loadAudiences();
+      setAudiences(a);
+      loaded.current = true;
+      try {
+        const log = await loadSentLog();
+        const counts = {};
+        (log || []).forEach((l) => { counts[l.audienceId] = (counts[l.audienceId] || 0) + 1; });
+        setSentCounts(counts);
+      } catch (e) {
+        console.error("sent counts skipped", e);
+      }
+    })();
+  }, []);
+
+  const addAudience = async (aud) => {
+    const next = [...audiences, aud];
+    setAudiences(next);
+    await saveAudiences(next);
+    setView({ page: "audience", id: aud.id });
+  };
+
+  const updateAudience = async (aud) => {
+    const next = audiences.map((a) => (a.id === aud.id ? aud : a));
+    setAudiences(next);
+    await saveAudiences(next);
+  };
+
+  const deleteAudience = async (id) => {
+    const next = audiences.filter((a) => a.id !== id);
+    setAudiences(next);
+    await saveAudiences(next);
+    try {
+      await window.storage.delete("emails:" + id, true);
+    } catch {}
+    await removeFromSentLog((l) => l.audienceId === id);
+    try {
+      const crm = await loadCrm();
+      if (crm[id]) {
+        delete crm[id];
+        await saveCrm(crm);
+      }
+    } catch {}
+    setView({ page: "home" });
+  };
+
+  const selected = view.page === "audience" ? audiences?.find((a) => a.id === view.id) : null;
+
+  // group by vertical
+  const groups = {};
+  (audiences || []).forEach((a) => {
+    (groups[a.vertical] = groups[a.vertical] || []).push(a);
+  });
+
+  return (
+    <div style={{ fontFamily: font, background: BRAND.paper, minHeight: "100vh", color: BRAND.ink }}>
+      <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" />
+      {/* Header */}
+      <div style={{ background: `linear-gradient(90deg, ${BRAND.primary}, ${BRAND.secondary} 70%, ${BRAND.accent})`, padding: "18px 28px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <div style={{ color: "#fff", fontSize: 19, fontWeight: 800, letterSpacing: 0.2 }}>Enterpryze Campaign Studio</div>
+          <div style={{ color: "rgba(255,255,255,.85)", fontSize: 12.5, marginTop: 2 }}>Outbound email content · sent from Emma@enterpryze.com · shared team workspace</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {audiences && (
+            <>
+              <button
+                onClick={() => setView({ page: "home" })}
+                style={{ background: !["board", "history", "followups", "data"].includes(view.page) ? "#fff" : "rgba(255,255,255,.18)", color: !["board", "history", "followups", "data"].includes(view.page) ? BRAND.primary : "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontFamily: font, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              >
+                Audiences
+              </button>
+              <button
+                onClick={() => setView({ page: "board" })}
+                style={{ background: view.page === "board" ? "#fff" : "rgba(255,255,255,.18)", color: view.page === "board" ? BRAND.primary : "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontFamily: font, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              >
+                ✈ Planning board
+              </button>
+              <button
+                onClick={() => setView({ page: "followups" })}
+                style={{ background: view.page === "followups" ? "#fff" : "rgba(255,255,255,.18)", color: view.page === "followups" ? BRAND.primary : "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontFamily: font, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              >
+                Follow-ups
+              </button>
+              <button
+                onClick={() => setView({ page: "history" })}
+                style={{ background: view.page === "history" ? "#fff" : "rgba(255,255,255,.18)", color: view.page === "history" ? BRAND.primary : "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontFamily: font, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              >
+                History
+              </button>
+              <button
+                onClick={() => setView({ page: "data" })}
+                style={{ background: view.page === "data" ? "#fff" : "rgba(255,255,255,.18)", color: view.page === "data" ? BRAND.primary : "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontFamily: font, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}
+              >
+                Data
+              </button>
+              {view.page === "home" && (
+                <button onClick={() => setView({ page: "new" })} style={{ background: "rgba(255,255,255,.18)", color: "#fff", border: "none", borderRadius: 8, padding: "9px 16px", fontFamily: font, fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>
+                  + New audience
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "28px 20px 60px" }}>
+        {audiences === null && <div style={{ fontSize: 13, color: BRAND.inkSoft }}>Loading your audiences…</div>}
+
+        {audiences !== null && view.page === "home" && (
+          <>
+            {audiences.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div style={{ fontSize: 40, marginBottom: 10 }}>🎯</div>
+                <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>Create your first audience</h2>
+                <p style={{ margin: "0 auto 20px", fontSize: 14, color: BRAND.inkSoft, maxWidth: 420, lineHeight: 1.6 }}>
+                  An audience is a micro-vertical in a region — like Medical Distribution in Ireland. Once it exists, anyone on the team can click it and generate a fresh, on-brand email in seconds.
+                </p>
+                <Btn onClick={() => setView({ page: "new" })}>+ New audience</Btn>
+              </div>
+            ) : (
+              Object.keys(groups).map((v) => (
+                <div key={v} style={{ marginBottom: 26 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: BRAND.inkSoft, marginBottom: 10 }}>{v}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 12 }}>
+                    {groups[v].map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => setView({ page: "audience", id: a.id })}
+                        style={{ textAlign: "left", background: BRAND.card, border: `1px solid ${BRAND.line}`, borderRadius: 12, padding: "16px 18px", cursor: "pointer", fontFamily: font }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: BRAND.ink }}>{a.region}</div>
+                          {a.owner ? (
+                            <Chip color="#fff" bg={BRAND.primary}>{a.owner}</Chip>
+                          ) : (
+                            <span style={{ fontSize: 11, color: BRAND.inkSoft }}>no owner</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: BRAND.inkSoft, marginTop: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          {a.description || "SME owners and operations leads"}
+                        </div>
+                        <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                          <Chip color={BRAND.accent} bg="#FDE7F3">Generate email →</Chip>
+                          {a.startDate && a.cadenceDays && (() => {
+                            const s = computeSchedule(a, sentCounts[a.id] || 0);
+                            return s ? <span style={{ fontSize: 11.5, color: s.overdue ? "#B3261E" : BRAND.inkSoft, fontWeight: s.overdue ? 700 : 400 }}>{s.overdue ? "Overdue: " : "Next send: "}{fmtDate(s.nextDue)}</span> : null;
+                          })()}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </>
+        )}
+
+        {view.page === "board" && audiences !== null && (
+          <PlanningBoard audiences={audiences} onOpen={(id) => setView({ page: "audience", id })} />
+        )}
+
+        {view.page === "history" && audiences !== null && (
+          <HistoryBoard audiences={audiences} onOpen={(id) => setView({ page: "audience", id })} />
+        )}
+
+        {view.page === "followups" && audiences !== null && (
+          <FollowUpsBoard audiences={audiences} onOpen={(id) => setView({ page: "audience", id })} />
+        )}
+
+        {view.page === "data" && (
+          <DataPage
+            onRestored={async () => {
+              const a = await loadAudiences();
+              setAudiences(a);
+            }}
+          />
+        )}
+
+        {view.page === "new" && audiences !== null && (
+          <AudienceForm existing={audiences} onSave={addAudience} onCancel={() => setView({ page: "home" })} />
+        )}
+
+        {view.page === "audience" && selected && (
+          <AudienceView
+            audience={selected}
+            onBack={() => setView({ page: "home" })}
+            onDeleteAudience={() => deleteAudience(selected.id)}
+            onUpdate={updateAudience}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+<script>
+try {
+  var __code = Babel.transform(document.getElementById("appsrc").textContent, { presets: [["react", { runtime: "classic" }], "env"] }).code;
+  (0, eval)(__code);
+} catch (err) {
+  console.error(err);
+  document.getElementById("root").innerHTML =
+    '<pre style="padding:20px;white-space:pre-wrap;font:13px monospace;color:#B3261E">' +
+    String(err && (err.stack || err.message) || err) + '</pre>';
+}
+</script>
+</body>
+</html>
